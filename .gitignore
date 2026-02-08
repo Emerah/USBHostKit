@@ -1,0 +1,23 @@
+# macOS
+.DS_Store
+
+# SwiftPM
+.build/
+.swiftpm/
+Package.resolved
+
+# Xcode
+DerivedData/
+*.xcworkspace/
+xcuserdata/
+*.xcuserstate
+
+# Playgrounds
+timeline.xctimeline
+playground.xcworkspace
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
