@@ -14,6 +14,7 @@ extension USBHostKit.Client {
     public final actor USBDeviceClient {
         
         private let device: USBDevice
+        private var interfaceCache: [CachedInterfaceKey: USBInterface] = [:]
         private var interfaceMonitoringTasks: [InterfaceSelection: Task<Void, Never>] = [:]
         private var continuations: [InterfaceSelection: AsyncThrowingStream<USBDeviceClient.Notification, any Error>.Continuation] = [:]
         
@@ -216,6 +217,7 @@ extension USBHostKit.Client.USBDeviceClient {
             continuation.finish()
         }
         continuations.removeAll()
+        destroyCachedInterfaces()
         device.destroy()
         state = .closed
     }
@@ -277,11 +279,32 @@ extension USBHostKit.Client.USBDeviceClient {
 
 // MARK: - Endpoint helpers
 extension USBHostKit.Client.USBDeviceClient {
+
+    private struct CachedInterfaceKey: Hashable, Sendable {
+        let interfaceNumber: UInt8
+        let alternateSetting: UInt8
+    }
     
     private func resolveEndpoint(for selection: InterfaceSelection) throws -> USBEndpoint {
         let (interfaceNumber, alternateSetting, endpointAddress) = try validatedSelection(selection)
-        let interface = try device.interface(interfaceNumber, alternateSetting: alternateSetting)
+        let interface = try resolveInterface(number: interfaceNumber, alternateSetting: alternateSetting)
         return try interface.copyEndpoint(address: endpointAddress)
+    }
+
+    private func resolveInterface(number: UInt8, alternateSetting: UInt8) throws -> USBInterface {
+        let key = CachedInterfaceKey(interfaceNumber: number, alternateSetting: alternateSetting)
+        if let cached = interfaceCache[key] {
+            return cached
+        }
+
+        let interface = try device.interface(number, alternateSetting: alternateSetting)
+        interfaceCache[key] = interface
+        return interface
+    }
+
+    private func destroyCachedInterfaces() {
+        interfaceCache.values.forEach { $0.destroy() }
+        interfaceCache.removeAll()
     }
     
     private func validatedSelection(_ selection: InterfaceSelection) throws -> (UInt8, UInt8, UInt8) {

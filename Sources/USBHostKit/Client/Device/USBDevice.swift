@@ -19,8 +19,6 @@ extension USBHostKit.Client.Device {
         
         internal let handle: IOUSBHostDevice
         private let metadata: MetaData
-        private let interfaceCacheQueue = DispatchQueue(label: "usbdevice.interfacesCache")
-        private var interfaces: [InterfaceSelection: USBInterface] = [:]
         
         internal init(handle: IOUSBHostDevice) {
             self.handle = handle
@@ -43,7 +41,6 @@ extension USBHostKit.Client.Device {
         }
         
         internal func destroy() {
-            clearInterfaceCache()
             handle.destroy()
         }
     }
@@ -99,8 +96,6 @@ extension USBHostKit.Client.Device.USBDevice {
         } catch {
             throw USBHostError.translated(error)
         }
-        
-        clearInterfaceCache()
     }
     
     internal func configure(value: Int) throws(USBHostError) {
@@ -121,8 +116,6 @@ extension USBHostKit.Client.Device.USBDevice {
         } catch {
             throw USBHostError.translated(error)
         }
-        
-        clearInterfaceCache()
     }
 }
 
@@ -233,16 +226,11 @@ extension USBHostKit.Client.Device.USBDevice {
 
 // MARK: - Request interface
 extension USBHostKit.Client.Device.USBDevice {
-    
-    private struct InterfaceSelection: Hashable, Sendable {
-        private let interfaceNumber: UInt8
-        private let alternateSetting: UInt8
-        fileprivate init(interfaceNumber: UInt8, alternateSetting: UInt8) {
-            self.interfaceNumber = interfaceNumber
-            self.alternateSetting = alternateSetting
-        }
+
+    private var liveConfigurationValue: UInt8? {
+        handle.configurationDescriptor?.pointee.bConfigurationValue
     }
-    
+
     private func serviceForInterface(number: UInt8) throws -> io_service_t {
         var iterator = io_iterator_t()
         let status = IORegistryEntryGetChildIterator(ioService, kIOServicePlane, &iterator)
@@ -267,42 +255,36 @@ extension USBHostKit.Client.Device.USBDevice {
     private func isValidInterface(_ service: io_service_t, interfaceNumber: UInt8) -> Bool {
         guard
             let number = propertyNumber(IOUSBHostMatchingPropertyKey.interfaceNumber.rawValue, service: service),
-            let configuration = propertyNumber(IOUSBHostMatchingPropertyKey.configurationValue.rawValue, service: service)
+            let configuration = propertyNumber(IOUSBHostMatchingPropertyKey.configurationValue.rawValue, service: service),
+            let currentConfiguration = liveConfigurationValue
         else {
             return false
         }
-        return number == interfaceNumber && configuration == metadata.currentConfigurationValue
+        return number == interfaceNumber && configuration == currentConfiguration
     }
     
     internal func interface(_ number: UInt8, alternateSetting: UInt8 = 0) throws -> USBInterface {
-        let selection = InterfaceSelection(interfaceNumber: number, alternateSetting: alternateSetting)
+        let service = try serviceForInterface(number: number)
+        defer { IOObjectRelease(service) }
         
-        return try interfaceCacheQueue.sync {
-            if let cached = interfaces[selection] { return cached }
-            
-            let service = try serviceForInterface(number: number)
-            defer { IOObjectRelease(service) }
-            
-            let interfaceHandle = try IOUSBHostInterface(
-                __ioService: service,
-                options: [],
-                queue: queue,
-                interestHandler: nil
-            )
-            
-            let usbInterface = USBInterface(handle: interfaceHandle)
-            do {
-                if alternateSetting != 0 {
-                    try usbInterface.selectAlternateSetting(Int(alternateSetting))
-                }
-            } catch {
-                usbInterface.destroy()
-                throw USBHostError.translated(error)
+        let interfaceHandle = try IOUSBHostInterface(
+            __ioService: service,
+            options: [],
+            queue: queue,
+            interestHandler: nil
+        )
+        
+        let usbInterface = USBInterface(handle: interfaceHandle)
+        do {
+            if alternateSetting != 0 {
+                try usbInterface.selectAlternateSetting(Int(alternateSetting))
             }
-            
-            interfaces[selection] = usbInterface
-            return usbInterface
+        } catch {
+            usbInterface.destroy()
+            throw USBHostError.translated(error)
         }
+
+        return usbInterface
     }
     
     private func propertyNumber(_ key: String, service: io_service_t) -> UInt8? {
@@ -314,24 +296,5 @@ extension USBHostKit.Client.Device.USBDevice {
         
         return number.uint8Value
     }
-    
-    private func cachedInterface(for key: InterfaceSelection) -> USBInterface? {
-        interfaceCacheQueue.sync {
-            interfaces[key]
-        }
-    }
-        
-    private func store(interface: USBInterface, for key: InterfaceSelection) {
-        interfaceCacheQueue.sync {
-            interfaces[key] = interface
-        }
-    }
-    
-    private func clearInterfaceCache() {
-      interfaceCacheQueue.sync {
-          interfaces.values.forEach { $0.destroy() }
-          interfaces.removeAll()
-      }
-  }
     
 }
