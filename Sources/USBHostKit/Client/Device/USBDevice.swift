@@ -12,6 +12,7 @@ import IOUSBHost
 
 
 extension USBHostKit.Client.Device {
+    
     internal final class USBDevice: USBObject {
         
         internal typealias USBHandle = IOUSBHostDevice
@@ -284,7 +285,7 @@ extension USBHostKit.Client.Device.USBDevice {
             
             let interfaceHandle = try IOUSBHostInterface(
                 __ioService: service,
-                options: [.deviceSeize],
+                options: [],
                 queue: queue,
                 interestHandler: nil
             )

@@ -24,12 +24,19 @@ extension USBHostKit.Client {
         private var state: SessionState = .active
         
         public init?(deviceReference: DeviceReference) {
-            guard let service = Self.ioService(for: deviceReference.deviceID) else { return nil }
+            guard let service = Self.ioService(for: deviceReference.deviceID) else {
+                USBHostKit.Manager.USBLogger.error("USBDeviceClient init failed: ioService not found for deviceID \(deviceReference.deviceID)")
+                return nil
+            }
             let device: USBDevice
             do {
                 device = try USBDevice(service: service, options: [.deviceSeize], queue: nil, interestHandler: nil)
                 try device.configure(value: 1, matchInterfaces: true)
             } catch {
+                let translated = USBHostError.translated(error)
+                USBHostKit.Manager.USBLogger.error(
+                    "USBDeviceClient init failed for deviceID \(deviceReference.deviceID): \(translated) (\(translated.localizedDescription))"
+                )
                 IOObjectRelease(service)
                 return nil
             }
