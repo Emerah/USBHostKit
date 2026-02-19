@@ -20,12 +20,23 @@ extension USBHostKit.Device {
         internal let handle: IOUSBHostDevice
         private let metadata: MetaData
         
+        /// Creates a device wrapper from an existing `IOUSBHostDevice` handle.
+        ///
+        /// - Parameter handle: Open device handle.
         internal init(handle: IOUSBHostDevice) {
             self.handle = handle
             let metadata = Self.retrieveDeviceMetadata(from: handle)
             self.metadata = metadata
         }
         
+        /// Creates and wraps an `IOUSBHostDevice` from an `io_service_t`.
+        ///
+        /// - Parameters:
+        ///   - service: Registry service for the USB device.
+        ///   - options: Host object initialization options.
+        ///   - queue: Dispatch queue used by the host object.
+        ///   - interestHandler: Optional interest callback.
+        /// - Throws: ``USBHostError`` when handle creation fails.
         internal convenience init(
             service: io_service_t,
             options: IOUSBHostObjectInitOptions,
@@ -40,6 +51,7 @@ extension USBHostKit.Device {
             }
         }
         
+        /// Destroys the underlying host-device handle.
         internal func destroy() {
             handle.destroy()
         }
@@ -52,6 +64,9 @@ extension USBHostKit.Device {
 // MARK: - Matching dictionary
 extension USBHostKit.Device.USBDevice {
     
+    /// Builds an IOService matching dictionary for USB device discovery.
+    ///
+    /// - Returns: A retained mutable dictionary accepted by IOKit matching APIs.
     internal static func createMatchingDictionary(
         vendorID: Int? = nil,
         productID: Int? = nil,
@@ -90,6 +105,12 @@ extension USBHostKit.Device.USBDevice {
 // MARK: - Configuration
 extension USBHostKit.Device.USBDevice {
     
+    /// Applies a configuration value on the device.
+    ///
+    /// - Parameters:
+    ///   - value: Configuration value to select.
+    ///   - matchInterfaces: Whether interfaces should be re-matched by IOUSBHost.
+    /// - Throws: ``USBHostError`` when configuration fails.
     internal func configure(value: Int, matchInterfaces: Bool) throws(USBHostError) {
         do {
             try handle.__configure(withValue: value, matchInterfaces: matchInterfaces)
@@ -98,6 +119,10 @@ extension USBHostKit.Device.USBDevice {
         }
     }
     
+    /// Applies a configuration value and requests interface matching.
+    ///
+    /// - Parameter value: Configuration value to select.
+    /// - Throws: ``USBHostError`` when configuration fails.
     internal func configure(value: Int) throws(USBHostError) {
         try configure(value: value, matchInterfaces: true)
     }
@@ -110,6 +135,9 @@ extension USBHostKit.Device.USBDevice {
         handle.configurationDescriptor
     }
     
+    /// Resets the device through IOUSBHost.
+    ///
+    /// - Throws: ``USBHostError`` when reset fails.
     internal func reset() throws(USBHostError) {
         do {
             try handle.reset()
@@ -151,7 +179,7 @@ extension USBHostKit.Device.USBDevice {
     }
     
     internal var currentConfigurationValue: UInt8 {
-        metadata.currentConfigurationValue
+        currentConfigurationDescriptor?.pointee.bConfigurationValue ?? metadata.currentConfigurationValue
     }
 }
 
@@ -181,6 +209,10 @@ extension USBHostKit.Device.USBDevice {
         )
     }
     
+    /// Reads immutable device metadata from the current descriptors and strings.
+    ///
+    /// - Parameter handle: Device handle to query.
+    /// - Returns: Metadata snapshot with descriptor and string values.
     private static func retrieveDeviceMetadata(from handle: IOUSBHostDevice) -> MetaData {
         guard
             let deviceDescriptor = handle.deviceDescriptor,
@@ -231,6 +263,11 @@ extension USBHostKit.Device.USBDevice {
         handle.configurationDescriptor?.pointee.bConfigurationValue
     }
 
+    /// Finds the matching interface service node for a given interface number.
+    ///
+    /// - Parameter number: Interface number to locate.
+    /// - Returns: Matching `io_service_t` interface node.
+    /// - Throws: ``USBHostError`` when iterator creation fails or no match is found.
     private func serviceForInterface(number: UInt8) throws -> io_service_t {
         var iterator = io_iterator_t()
         let status = IORegistryEntryGetChildIterator(ioService, kIOServicePlane, &iterator)
@@ -252,6 +289,12 @@ extension USBHostKit.Device.USBDevice {
         throw USBHostError.invalid
     }
     
+    /// Checks whether an interface service belongs to the active configuration and requested number.
+    ///
+    /// - Parameters:
+    ///   - service: Interface service to validate.
+    ///   - interfaceNumber: Requested interface number.
+    /// - Returns: `true` when the service matches selection criteria.
     private func isValidInterface(_ service: io_service_t, interfaceNumber: UInt8) -> Bool {
         guard
             let number = propertyNumber(IOUSBHostMatchingPropertyKey.interfaceNumber.rawValue, service: service),
@@ -263,6 +306,13 @@ extension USBHostKit.Device.USBDevice {
         return number == interfaceNumber && configuration == currentConfiguration
     }
     
+    /// Opens and wraps a USB interface for the given interface and alternate setting.
+    ///
+    /// - Parameters:
+    ///   - number: Interface number.
+    ///   - alternateSetting: Alternate setting to select after opening.
+    /// - Returns: Wrapped USB interface object.
+    /// - Throws: ``USBHostError`` when lookup/open/select operations fail.
     internal func interface(_ number: UInt8, alternateSetting: UInt8 = 0) throws -> USBInterface {
         let service = try serviceForInterface(number: number)
         defer { IOObjectRelease(service) }
@@ -287,6 +337,12 @@ extension USBHostKit.Device.USBDevice {
         return usbInterface
     }
     
+    /// Reads an IORegistry numeric property as `UInt8`.
+    ///
+    /// - Parameters:
+    ///   - key: Property key.
+    ///   - service: Service that owns the property.
+    /// - Returns: Property value when available and numeric.
     private func propertyNumber(_ key: String, service: io_service_t) -> UInt8? {
         guard let value = IORegistryEntryCreateCFProperty(service, key as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue()
         else { return nil }

@@ -28,6 +28,7 @@ extension USBHostKit.Manager {
         private var deviceMatchingCriteria: DeviceMatchingCriteria?
         private var isMonitoring = false
 
+        /// Creates an idle USB device manager actor.
         public init() {}
         
     }
@@ -37,6 +38,11 @@ extension USBHostKit.Manager {
 // MARK: - MONITORING PUBLIC API
 extension USBHostKit.Manager.USBDeviceManager {
 
+    /// Starts device monitoring and returns an async stream of match/removal notifications.
+    ///
+    /// - Parameter matchingCriteria: Criteria applied to IOKit matching dictionaries.
+    /// - Returns: Async stream that yields device notifications.
+    /// - Throws: ``ConnectionError`` when monitoring setup fails.
     public func monitorNotifications(matchingCriteria: DeviceMatchingCriteria) throws -> AsyncThrowingStream<Notification, any Error> {
         self.deviceMatchingCriteria = matchingCriteria
         var tempContinuation: AsyncThrowingStream<USBDeviceManager.Notification, Error>.Continuation?
@@ -52,6 +58,7 @@ extension USBHostKit.Manager.USBDeviceManager {
         return stream
     }
 
+    /// Stops monitoring activity and releases all monitoring resources.
     public func endMonitoringActivity() {
         guard isMonitoring else { return }
         continuation?.finish()
@@ -64,6 +71,10 @@ extension USBHostKit.Manager.USBDeviceManager {
 
 // MARK: - MONITORING ENGINE
 extension USBHostKit.Manager.USBDeviceManager {
+    /// Sets up notification port, iterators, callbacks, and stream termination handling.
+    ///
+    /// - Parameter continuation: Stream continuation used to emit notifications.
+    /// - Throws: ``ConnectionError`` when setup fails.
     private func startMonitoringDevices(continuation: AsyncThrowingStream<USBDeviceManager.Notification, Error>.Continuation) throws {
         
         guard !isMonitoring else {
@@ -101,6 +112,11 @@ extension USBHostKit.Manager.USBDeviceManager {
         }
     }
 
+    /// Registers first-match and termination iterators for the configured criteria.
+    ///
+    /// - Parameter context: Retained actor pointer passed to C callbacks.
+    /// - Returns: Registered iterator handles.
+    /// - Throws: ``ConnectionError`` when registration fails.
     private func registerNotificationIterators(_ context: UnsafeMutableRawPointer) throws -> IteratorRegistry {
         guard let port = notificationPort else {
             let error = ConnectionError.notificationPortUnavailable
@@ -153,6 +169,10 @@ extension USBHostKit.Manager.USBDeviceManager {
 
 // MARK: - IOKit HELPERS
 extension USBHostKit.Manager.USBDeviceManager {
+    /// Adds one IOKit matching notification and returns its iterator.
+    ///
+    /// - Returns: Registered iterator handle.
+    /// - Throws: ``ConnectionError`` when registration fails.
     private func addMatchingNotification(
         port: IONotificationPortRef,
         notification: UnsafePointer<CChar>?,
@@ -178,6 +198,12 @@ extension USBHostKit.Manager.USBDeviceManager {
         return iterator
     }
 
+    /// Creates an IOKit matching dictionary and applies optional filtering criteria.
+    ///
+    /// - Parameters:
+    ///   - className: IOKit class name to match.
+    ///   - criteria: Optional criteria values for filtering.
+    /// - Returns: Mutable matching dictionary or `nil` if base dictionary creation fails.
     private func buildMatchingDictionary(className: UnsafePointer<CChar>, criteria: USBHostKit.Manager.USBDeviceManager.DeviceMatchingCriteria? = nil) -> CFMutableDictionary? {
         guard let dictionary = IOServiceMatching(className) else {
             return nil
@@ -198,6 +224,10 @@ extension USBHostKit.Manager.USBDeviceManager {
         return dictionary
     }
 
+    /// Creates an IOKit notification port.
+    ///
+    /// - Returns: Notification port handle.
+    /// - Throws: ``ConnectionError`` when port allocation fails.
     private func createNotificationPort() throws -> IONotificationPortRef {
         guard let port = IONotificationPortCreate(kIOMainPortDefault) else {
             let error = ConnectionError.notificationPortUnavailable
@@ -208,14 +238,25 @@ extension USBHostKit.Manager.USBDeviceManager {
         return port
     }
 
+    /// Assigns a dispatch queue to an IOKit notification port.
+    ///
+    /// - Parameters:
+    ///   - queue: Queue to assign, or `nil` to detach.
+    ///   - port: Notification port to configure.
     private func setDispatchQueue(_ queue: DispatchQueue?, for port: IONotificationPortRef) {
         IONotificationPortSetDispatchQueue(port, queue)
     }
 
+    /// Destroys an IOKit notification port.
+    ///
+    /// - Parameter port: Port to destroy.
     private func destroyNotificationPort(_ port: IONotificationPortRef) {
         IONotificationPortDestroy(port)
     }
 
+    /// Releases an IOKit object handle.
+    ///
+    /// - Parameter object: Object to release.
     private func releaseIOObject(_ object: io_object_t) {
         IOObjectRelease(object)
     }
@@ -241,16 +282,29 @@ extension USBHostKit.Manager.USBDeviceManager {
 // MARK: - HANDLE CONNECTION
 extension USBHostKit.Manager.USBDeviceManager {
 
+    /// Handles stream termination by clearing continuation state and releasing resources.
+    ///
+    /// - Parameter reason: Stream termination reason.
     private func handleStreamTermination(reason: AsyncThrowingStream<USBDeviceManager.Notification, Error>.Continuation.Termination) {
         guard isMonitoring else { return }
         self.continuation = nil
         cleanupIOKitResources()
     }
 
+    /// Processes one callback event by draining its iterator.
+    ///
+    /// - Parameters:
+    ///   - iterator: Event iterator received from callback.
+    ///   - event: Event kind to emit.
     private func handleConnectionEvent(iterator: io_iterator_t, event: ConnectionEvent) {
         drain(iterator: iterator, event: event)
     }
 
+    /// Drains all services from an iterator and emits match/removal notifications.
+    ///
+    /// - Parameters:
+    ///   - iterator: Iterator to drain.
+    ///   - event: Event type for emitted notifications.
     private func drain(iterator: io_iterator_t, event: ConnectionEvent) {
         guard iterator != IO_OBJECT_NULL else { return }
         
@@ -284,6 +338,10 @@ extension USBHostKit.Manager.USBDeviceManager {
 // MARK: - Registry ID
 extension USBHostKit.Manager.USBDeviceManager {
     
+    /// Reads IORegistry entry ID for a service.
+    ///
+    /// - Parameter service: Service whose registry ID is requested.
+    /// - Returns: Registry ID on success, otherwise `nil`.
     private func registryID(for service: io_service_t) -> UInt64? {
         var entryID: UInt64 = 0
         let status = IORegistryEntryGetRegistryEntryID(service, &entryID)
@@ -295,6 +353,7 @@ extension USBHostKit.Manager.USBDeviceManager {
 // MARK: - CLEANUP IOKit RESOURCES
 extension USBHostKit.Manager.USBDeviceManager {
 
+    /// Releases iterators, notification port, and retained callback context.
     private func cleanupIOKitResources() {
         if let registry = iteratorRegistry {
             releaseIOObject(registry.matchingIterator)
@@ -335,6 +394,11 @@ extension USBHostKit.Manager.USBDeviceManager {
         
         fileprivate let terminatingIterator: io_iterator_t
 
+        /// Creates an iterator registry with match and termination iterators.
+        ///
+        /// - Parameters:
+        ///   - matchingIterator: First-match iterator.
+        ///   - terminationIterator: Termination iterator.
         fileprivate init(matchingIterator: io_iterator_t, terminationIterator: io_iterator_t) {
             self.matchingIterator = matchingIterator
             self.terminatingIterator = terminationIterator
@@ -351,6 +415,14 @@ extension USBHostKit.Manager.USBDeviceManager {
         public let manufacturer: String?
         public let serialNumber: String?
 
+        /// Creates immutable matching criteria for device monitoring.
+        ///
+        /// - Parameters:
+        ///   - vendorID: USB vendor identifier.
+        ///   - productID: USB product identifier.
+        ///   - productName: Optional product string filter.
+        ///   - manufacturerName: Optional manufacturer string filter.
+        ///   - serialNumber: Optional serial string filter.
         public init(vendorID: UInt16, productID: UInt16, productName: String? = nil, manufacturerName: String? = nil, serialNumber: String? = nil) {
             self.vendorID = vendorID
             self.productID = productID
@@ -420,32 +492,47 @@ extension USBHostKit.Manager {
 
         // Core logging function
 //        #if USBCONNECTION_LOGGING
+        /// Writes one log message in debug builds.
+        ///
+        /// - Parameters:
+        ///   - level: Log level.
+        ///   - message: Log message.
+        ///   - file: Source file identifier.
+        ///   - line: Source line.
         #if DEBUG
         private static func log(_ level: LogLevel, _ message: String, file: StaticString = #fileID, line: UInt = #line) {
             print("\(timestamp()): [\(level.rawValue)] - \(file):\(line):- \(message)")
         }
         #else
+        /// No-op logger used in non-debug builds.
         @inline(__always) private static func log(_ level: LogLevel, _ message: String, file: StaticString = #fileID, line: UInt = #line) { }
         #endif
 
         // MARK: - Convenience methods
+        /// Logs an informational message.
         internal static func info(_ message: String, file: StaticString = #fileID, line: UInt = #line) {
             log(.info, message, file: file, line: line)
         }
 
+        /// Logs a warning message.
         internal static func warning(_ message: String, file: StaticString = #fileID, line: UInt = #line) {
             log(.warning, message, file: file, line: line)
         }
 
+        /// Logs an error message.
         internal static func error(_ message: String, file: StaticString = #fileID, line: UInt = #line) {
             log(.error, message, file: file, line: line)
         }
 
+        /// Logs a debug message.
         internal static func debug(_ message: String, file: StaticString = #fileID, line: UInt = #line) {
             log(.debug, message, file: file, line: line)
         }
 
         // MARK: - Helper
+        /// Creates an HH:mm:ss timestamp string for log prefixes.
+        ///
+        /// - Returns: Formatted local timestamp string.
         private static func timestamp() -> String {
             let formatter = DateFormatter()
             formatter.dateFormat = "HH:mm:ss"

@@ -18,6 +18,9 @@ extension USBHostKit.Device.USBDevice.USBInterface {
         internal let handle: IOUSBHostPipe
         private let metadata: MetaData
         
+        /// Creates an endpoint wrapper from an existing `IOUSBHostPipe`.
+        ///
+        /// - Parameter handle: Open pipe handle.
         internal init(handle: IOUSBHostPipe) {
             self.handle = handle
             let metadata = Self.retrieveEndpointMetadata(from: handle)
@@ -41,6 +44,10 @@ extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
         handle.hostInterface
     }
 
+    /// Applies scheduling descriptor adjustments to the pipe.
+    ///
+    /// - Parameter descriptors: I/O source descriptor settings.
+    /// - Throws: ``USBHostError`` when adjustment fails.
     internal func adjust(descriptors: UnsafePointer<IOUSBHostIOSourceDescriptors>) throws(USBHostError) {
         do {
             try handle.adjust(with:descriptors)
@@ -57,6 +64,10 @@ extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
         handle.idleTimeout
     }
 
+    /// Sets endpoint idle timeout.
+    ///
+    /// - Parameter timeout: Idle timeout in seconds.
+    /// - Throws: ``USBHostError`` when the operation fails.
     internal func setIdleTimeout(_ timeout: TimeInterval) throws(USBHostError) {
         do {
             try handle.setIdleTimeout(timeout)
@@ -65,6 +76,9 @@ extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
         }
     }
 
+    /// Clears a halted/stalled endpoint.
+    ///
+    /// - Throws: ``USBHostError`` when clear-stall fails.
     internal func clearStall() throws(USBHostError) {
         do {
             try handle.clearStall()
@@ -76,6 +90,10 @@ extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
 
 // MARK: - Abort
 extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
+    /// Aborts queued endpoint operations.
+    ///
+    /// - Parameter option: Abort behavior option.
+    /// - Throws: ``USBHostError`` when abort fails.
     internal func abort(option: IOUSBHostAbortOption = .synchronous) throws(USBHostError) {
         do {
             try handle.__abort(with: option)
@@ -87,6 +105,14 @@ extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
 
 // MARK: - Control transfers
 extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
+    /// Sends a synchronous control request on the endpoint.
+    ///
+    /// - Parameters:
+    ///   - request: USB request descriptor.
+    ///   - data: Optional payload buffer.
+    ///   - timeout: Completion timeout in seconds.
+    /// - Returns: Number of transferred bytes.
+    /// - Throws: ``USBHostError`` when request execution fails.
     internal func sendControlRequest(
         _ request: IOUSBDeviceRequest,
         data: NSMutableData? = nil,
@@ -106,6 +132,14 @@ extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
         return bytes
     }
 
+    /// Enqueues an asynchronous control request using a callback completion.
+    ///
+    /// - Parameters:
+    ///   - request: USB request descriptor.
+    ///   - data: Optional payload buffer.
+    ///   - timeout: Completion timeout in seconds.
+    ///   - completion: Optional completion callback.
+    /// - Throws: ``USBHostError`` when enqueue fails.
     internal func enqueueControlRequest(
         _ request: IOUSBDeviceRequest,
         data: NSMutableData? = nil,
@@ -124,6 +158,14 @@ extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
         }
     }
 
+    /// Enqueues an asynchronous control request and awaits completion.
+    ///
+    /// - Parameters:
+    ///   - request: USB request descriptor.
+    ///   - data: Optional payload buffer.
+    ///   - timeout: Completion timeout in seconds.
+    /// - Returns: Number of transferred bytes.
+    /// - Throws: ``USBHostError`` when enqueue or completion fails.
     internal func enqueueControlRequest(
         _ request: IOUSBDeviceRequest,
         data: NSMutableData? = nil,
@@ -148,6 +190,13 @@ extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
 
 // MARK: - Bulk / interrupt IO
 extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
+    /// Sends a synchronous bulk/interrupt I/O request.
+    ///
+    /// - Parameters:
+    ///   - data: Payload buffer.
+    ///   - timeout: Completion timeout in seconds.
+    /// - Returns: Number of transferred bytes.
+    /// - Throws: ``USBHostError`` when send fails.
     internal func sendIORequest(data: NSMutableData?, timeout: TimeInterval) throws(USBHostError) -> Int {
         var bytes: Int = 0
         do {
@@ -158,6 +207,13 @@ extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
         return bytes
     }
 
+    /// Enqueues a bulk/interrupt I/O request with optional callback completion.
+    ///
+    /// - Parameters:
+    ///   - data: Payload buffer.
+    ///   - timeout: Completion timeout in seconds.
+    ///   - completionHandler: Optional completion callback.
+    /// - Throws: ``USBHostError`` when enqueue fails.
     internal func enqueueIORequest(
         data: NSMutableData?,
         timeout: TimeInterval,
@@ -174,6 +230,9 @@ extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
 
 // MARK: - Streams
 extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
+    /// Enables USB streams for the endpoint.
+    ///
+    /// - Throws: ``USBHostError`` when enabling streams fails.
     internal func enableStreams() throws(USBHostError) {
         do {
             try handle.enableStreams()
@@ -182,6 +241,9 @@ extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
         }
     }
 
+    /// Disables USB streams for the endpoint.
+    ///
+    /// - Throws: ``USBHostError`` when disabling streams fails.
     internal func disableStreams() throws(USBHostError) {
         do {
             try handle.disableStreams()
@@ -190,6 +252,11 @@ extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
         }
     }
 
+    /// Copies a stream object by stream identifier.
+    ///
+    /// - Parameter streamID: Stream identifier.
+    /// - Returns: Open stream object.
+    /// - Throws: ``USBHostError`` when stream lookup/open fails.
     internal func copyStream(streamID: Int) throws(USBHostError) -> IOUSBHostStream {
         do {
             let stream = try handle.copyStream(withStreamID: streamID)
@@ -232,6 +299,9 @@ extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
         case hostToDevice // out
         case deviceToHost // in
         
+        /// Creates an endpoint direction from the endpoint address direction bit.
+        ///
+        /// - Parameter endpointAddress: USB endpoint address.
         internal init(endpointAddress: UInt8) {
             if (endpointAddress & 0x80) != 0 {
                 self = .deviceToHost
@@ -248,6 +318,9 @@ extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
         case isochronous
         case unknown
 
+        /// Creates a transfer type from endpoint `bmAttributes`.
+        ///
+        /// - Parameter bmAtrributes: Endpoint attribute byte from descriptor.
         internal init(bmAtrributes: UInt8) {
             let transferType = (bmAtrributes & 0x03)
             switch transferType {
@@ -272,6 +345,10 @@ extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
         fileprivate let transferType: USBEndpointTransferType
     }
 
+    /// Reads endpoint metadata from pipe descriptors.
+    ///
+    /// - Parameter handle: Endpoint pipe handle.
+    /// - Returns: Metadata snapshot used by endpoint accessors.
     private static func retrieveEndpointMetadata(from handle: IOUSBHostPipe) -> MetaData {
         let descriptor = handle.descriptors.pointee.descriptor
         let endpointAddress = descriptor.bEndpointAddress

@@ -30,10 +30,14 @@ extension USBHostKit.Device.USBObject {
         handle.queue
     }
     
+    /// Destroys the wrapped IOUSBHost object.
     internal func destroy() {
         handle.destroy()
     }
     
+    /// Destroys the wrapped IOUSBHost object with explicit destroy options.
+    ///
+    /// - Parameter options: Host-object destroy options.
     internal func destroy(options: IOUSBHostObjectDestroyOptions) {
         handle.destroy(options: options)
     }
@@ -42,6 +46,14 @@ extension USBHostKit.Device.USBObject {
 // MARK: - Synchronous control requests
 extension USBHostKit.Device.USBObject {
     
+    /// Sends a synchronous device request and returns the transfer count.
+    ///
+    /// - Parameters:
+    ///   - request: USB device request descriptor.
+    ///   - data: Optional payload buffer.
+    ///   - timeout: Completion timeout in seconds.
+    /// - Returns: Number of bytes transferred.
+    /// - Throws: ``USBHostError`` when request execution fails.
     internal func sendDeviceRequest(
         _ request: IOUSBDeviceRequest,
         data: NSMutableData? = nil,
@@ -56,6 +68,12 @@ extension USBHostKit.Device.USBObject {
         return bytesTransferred
     }
     
+    /// Sends a synchronous device request without a payload buffer.
+    ///
+    /// - Parameters:
+    ///   - request: USB device request descriptor.
+    ///   - timeout: Completion timeout in seconds.
+    /// - Throws: ``USBHostError`` when request execution fails.
     internal func sendDeviceRequest(_ request: IOUSBDeviceRequest, timeout: TimeInterval = IOUSBHostDefaultControlCompletionTimeout) throws(USBHostError) {
         do {
             try handle.__send(request, data: nil, bytesTransferred: nil, completionTimeout: timeout)
@@ -68,6 +86,14 @@ extension USBHostKit.Device.USBObject {
 // MARK: - Asynchronous control requests
 extension USBHostKit.Device.USBObject {
     
+    /// Enqueues an asynchronous device request.
+    ///
+    /// - Parameters:
+    ///   - request: USB device request descriptor.
+    ///   - data: Optional payload buffer.
+    ///   - timeout: Completion timeout in seconds.
+    ///   - completion: Completion callback with status and bytes transferred.
+    /// - Throws: ``USBHostError`` when enqueue fails.
     internal func enqueueDeviceRequest(
         _ request: IOUSBDeviceRequest,
         data: NSMutableData? = nil,
@@ -81,6 +107,10 @@ extension USBHostKit.Device.USBObject {
         }
     }
     
+    /// Aborts pending device requests.
+    ///
+    /// - Parameter option: Abort behavior option.
+    /// - Throws: ``USBHostError`` when abort fails.
     internal func abortDeviceRequests(option: IOUSBHostAbortOption = .synchronous) throws(USBHostError) {
         do {
             try handle.__abortDeviceRequests(with: option)
@@ -93,6 +123,17 @@ extension USBHostKit.Device.USBObject {
 // MARK: - Descriptor helpers
 extension USBHostKit.Device.USBObject {
     
+    /// Reads a descriptor pointer from the device for the requested descriptor tuple.
+    ///
+    /// - Parameters:
+    ///   - type: Descriptor type.
+    ///   - maxLength: In/out maximum descriptor length.
+    ///   - index: Descriptor index.
+    ///   - languageID: String language ID when applicable.
+    ///   - requestType: USB request type field.
+    ///   - requestRecipient: USB request recipient field.
+    /// - Returns: Descriptor pointer when available.
+    /// - Throws: ``USBHostError`` when retrieval fails.
     internal func descriptor(
         type: tIOUSBDescriptorType,
         maxLength: inout Int,
@@ -128,6 +169,11 @@ extension USBHostKit.Device.USBObject {
         handle.capabilityDescriptors
     }
     
+    /// Returns a configuration descriptor for a specific configuration value.
+    ///
+    /// - Parameter configurationValue: Configuration value to query.
+    /// - Returns: Pointer to configuration descriptor.
+    /// - Throws: ``USBHostError`` when retrieval fails.
     internal func configurationDescriptor(configurationValue: Int) throws(USBHostError) -> UnsafePointer<IOUSBConfigurationDescriptor> {
         do {
             return try handle.configurationDescriptor(withConfigurationValue: configurationValue)
@@ -136,6 +182,13 @@ extension USBHostKit.Device.USBObject {
         }
     }
     
+    /// Reads a UTF string descriptor from the device.
+    ///
+    /// - Parameters:
+    ///   - index: String descriptor index.
+    ///   - languageID: Language ID used for descriptor lookup.
+    /// - Returns: Localized descriptor string.
+    /// - Throws: ``USBHostError`` when retrieval fails.
     internal func stringDescriptor(index: Int, languageID: Int = Int(kIOUSBLanguageIDEnglishUS.rawValue)) throws(USBHostError) -> String {
         do {
             return try handle.__string(with: Int(index), languageID: languageID)
@@ -155,12 +208,21 @@ extension USBHostKit.Device.USBObject {
         handle.__frameNumber(withTime: nil)
     }
     
+    /// Retrieves the current frame number and updates the provided time stamp.
+    ///
+    /// - Parameter time: In/out USB host time structure.
+    /// - Returns: Current frame number.
     internal func frameNumber(with time: inout IOUSBHostTime) -> UInt64 {
         withUnsafeMutablePointer(to: &time) { ptr in
             handle.__frameNumber(withTime: ptr)
         }
     }
     
+    /// Allocates I/O data storage using the host object allocator.
+    ///
+    /// - Parameter capacity: Requested buffer capacity in bytes.
+    /// - Returns: Mutable data object suitable for USB I/O APIs.
+    /// - Throws: ``USBHostError`` when allocation fails.
     internal func makeIOData(capacity: Int) throws(USBHostError) -> NSMutableData {
         do {
             return try handle.ioData(withCapacity: capacity)

@@ -19,12 +19,23 @@ extension USBHostKit.Device.USBDevice {
         internal let handle: IOUSBHostInterface
         private let metadata: MetaData
 
+        /// Creates an interface wrapper from an existing `IOUSBHostInterface` handle.
+        ///
+        /// - Parameter handle: Open interface handle.
         internal init(handle: IOUSBHostInterface) {
             self.handle = handle
             let metadata = Self.retrieveInterfaceMetadata(from: handle)
             self.metadata = metadata
         }
         
+        /// Creates and wraps an interface from an `io_service_t`.
+        ///
+        /// - Parameters:
+        ///   - service: Interface service entry.
+        ///   - options: Host object initialization options.
+        ///   - queue: Dispatch queue used by the host object.
+        ///   - interestHandler: Optional host-object interest callback.
+        /// - Throws: ``USBHostError`` when handle creation fails.
         internal convenience init(
             service: io_service_t,
             options: IOUSBHostObjectInitOptions,
@@ -44,6 +55,9 @@ extension USBHostKit.Device.USBDevice {
 
 // MARK: - Create matching dictionary
 extension USBHostKit.Device.USBDevice.USBInterface {
+    /// Builds an interface matching dictionary for IOKit matching APIs.
+    ///
+    /// - Returns: Retained mutable dictionary for interface matching.
     internal static func createMatchingDictionary(
         vendorID: NSNumber? = nil,
         productID: NSNumber? = nil,
@@ -81,6 +95,10 @@ extension USBHostKit.Device.USBDevice.USBInterface {
         handle.idleTimeout
     }
     
+    /// Sets interface idle timeout.
+    ///
+    /// - Parameter timeout: Idle timeout in seconds.
+    /// - Throws: ``USBHostError`` when the operation fails.
     internal func setIdleTimeout(_ timeout: TimeInterval) throws(USBHostError) {
         do {
             try handle.setIdleTimeout(timeout)
@@ -107,6 +125,10 @@ extension USBHostKit.Device.USBDevice.USBInterface {
 // MARK: - Alternate settings & pipes
 extension USBHostKit.Device.USBDevice.USBInterface {
     
+    /// Selects an alternate interface setting.
+    ///
+    /// - Parameter alternateSetting: Alternate setting value.
+    /// - Throws: ``USBHostError`` when selection fails.
     internal func selectAlternateSetting(_ alternateSetting: Int) throws(USBHostError) {
         do {
             try handle.selectAlternateSetting(alternateSetting)
@@ -115,6 +137,11 @@ extension USBHostKit.Device.USBDevice.USBInterface {
         }
     }
 
+    /// Copies a pipe by USB endpoint address and wraps it as ``USBEndpoint``.
+    ///
+    /// - Parameter address: Endpoint address.
+    /// - Returns: Wrapped endpoint object.
+    /// - Throws: ``USBHostError`` when the endpoint cannot be opened.
     internal func copyEndpoint(address: UInt8) throws(USBHostError) -> USBEndpoint {
         do {
             let pipe = try handle.copyPipe(withAddress: Int(address))
@@ -153,6 +180,10 @@ extension USBHostKit.Device.USBDevice.USBInterface {
         fileprivate let alternateSetting: UInt8
     }
 
+    /// Reads interface metadata from descriptors and string tables.
+    ///
+    /// - Parameter handle: Interface handle to query.
+    /// - Returns: Metadata snapshot for name/endpoints/interface IDs.
     private static func retrieveInterfaceMetadata(from handle: IOUSBHostInterface) -> MetaData {
         let descriptor = handle.interfaceDescriptor.pointee
         let endpointCount = descriptor.bNumEndpoints
