@@ -10,7 +10,7 @@
 import Foundation
 import IOUSBHost
 
-extension USBHostKit.Client.Device.USBDevice.USBInterface {
+extension USBHostKit.Device.USBDevice.USBInterface {
     internal final class USBEndpoint {
         
         internal typealias USBHandle = IOUSBHostPipe
@@ -27,7 +27,7 @@ extension USBHostKit.Client.Device.USBDevice.USBInterface {
 }
 
 // MARK: - Descriptors & policy
-extension USBHostKit.Client.Device.USBDevice.USBInterface.USBEndpoint {
+extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
 
     internal var originalDescriptors: UnsafePointer<IOUSBHostIOSourceDescriptors> {
         handle.originalDescriptors
@@ -52,7 +52,7 @@ extension USBHostKit.Client.Device.USBDevice.USBInterface.USBEndpoint {
 
 
 // MARK: - Idle timeout & halt
-extension USBHostKit.Client.Device.USBDevice.USBInterface.USBEndpoint {
+extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
     internal var idleTimeout: TimeInterval {
         handle.idleTimeout
     }
@@ -75,7 +75,7 @@ extension USBHostKit.Client.Device.USBDevice.USBInterface.USBEndpoint {
 }
 
 // MARK: - Abort
-extension USBHostKit.Client.Device.USBDevice.USBInterface.USBEndpoint {
+extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
     internal func abort(option: IOUSBHostAbortOption = .synchronous) throws(USBHostError) {
         do {
             try handle.__abort(with: option)
@@ -86,7 +86,7 @@ extension USBHostKit.Client.Device.USBDevice.USBInterface.USBEndpoint {
 }
 
 // MARK: - Control transfers
-extension USBHostKit.Client.Device.USBDevice.USBInterface.USBEndpoint {
+extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
     internal func sendControlRequest(
         _ request: IOUSBDeviceRequest,
         data: NSMutableData? = nil,
@@ -147,7 +147,7 @@ extension USBHostKit.Client.Device.USBDevice.USBInterface.USBEndpoint {
 }
 
 // MARK: - Bulk / interrupt IO
-extension USBHostKit.Client.Device.USBDevice.USBInterface.USBEndpoint {
+extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
     internal func sendIORequest(data: NSMutableData?, timeout: TimeInterval) throws(USBHostError) -> Int {
         var bytes: Int = 0
         do {
@@ -173,7 +173,7 @@ extension USBHostKit.Client.Device.USBDevice.USBInterface.USBEndpoint {
 
 
 // MARK: - Streams
-extension USBHostKit.Client.Device.USBDevice.USBInterface.USBEndpoint {
+extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
     internal func enableStreams() throws(USBHostError) {
         do {
             try handle.enableStreams()
@@ -202,7 +202,7 @@ extension USBHostKit.Client.Device.USBDevice.USBInterface.USBEndpoint {
 
 
 // MARK: - Metadata
-extension USBHostKit.Client.Device.USBDevice.USBInterface.USBEndpoint {
+extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
     internal var endpointAddress: UInt8 {
         metadata.endpointAddress
     }
@@ -226,7 +226,7 @@ extension USBHostKit.Client.Device.USBDevice.USBInterface.USBEndpoint {
 
 
 // MARK: - Metadata types
-extension USBHostKit.Client.Device.USBDevice.USBInterface.USBEndpoint {
+extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
     
     internal enum USBEndpointDirection: Sendable {
         case hostToDevice // out
@@ -262,7 +262,7 @@ extension USBHostKit.Client.Device.USBDevice.USBInterface.USBEndpoint {
 }
 
 
-extension USBHostKit.Client.Device.USBDevice.USBInterface.USBEndpoint {
+extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
 
     fileprivate struct MetaData {
         fileprivate let endpointAddress: UInt8

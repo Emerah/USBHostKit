@@ -11,7 +11,7 @@ import Foundation
 import IOUSBHost
 
 
-extension USBHostKit.Client.Device {
+extension USBHostKit.Device {
     internal protocol USBObject {
         associatedtype USBHandle: IOUSBHostObject
         var handle: USBHandle { get }
@@ -21,7 +21,7 @@ extension USBHostKit.Client.Device {
 
 
 // MARK: - Session management / creation
-extension USBHostKit.Client.Device.USBObject {
+extension USBHostKit.Device.USBObject {
     internal var ioService: io_service_t {
         handle.ioService
     }
@@ -40,7 +40,7 @@ extension USBHostKit.Client.Device.USBObject {
 }
 
 // MARK: - Synchronous control requests
-extension USBHostKit.Client.Device.USBObject {
+extension USBHostKit.Device.USBObject {
     
     internal func sendDeviceRequest(
         _ request: IOUSBDeviceRequest,
@@ -66,7 +66,7 @@ extension USBHostKit.Client.Device.USBObject {
 }
 
 // MARK: - Asynchronous control requests
-extension USBHostKit.Client.Device.USBObject {
+extension USBHostKit.Device.USBObject {
     
     internal func enqueueDeviceRequest(
         _ request: IOUSBDeviceRequest,
@@ -91,7 +91,7 @@ extension USBHostKit.Client.Device.USBObject {
 }
 
 // MARK: - Descriptor helpers
-extension USBHostKit.Client.Device.USBObject {
+extension USBHostKit.Device.USBObject {
     
     internal func descriptor(
         type: tIOUSBDescriptorType,
@@ -146,7 +146,7 @@ extension USBHostKit.Client.Device.USBObject {
 }
 
 // MARK: - Misc
-extension USBHostKit.Client.Device.USBObject {
+extension USBHostKit.Device.USBObject {
     internal var deviceAddress: Int {
         handle.deviceAddress
     }

@@ -11,7 +11,7 @@ import Foundation
 import IOUSBHost
 
 
-extension USBHostKit.Client.Device.USBDevice {
+extension USBHostKit.Device.USBDevice {
     internal final class USBInterface: USBObject {
         
         internal typealias USBHandle = IOUSBHostInterface
@@ -43,7 +43,7 @@ extension USBHostKit.Client.Device.USBDevice {
 
 
 // MARK: - Create matching dictionary
-extension USBHostKit.Client.Device.USBDevice.USBInterface {
+extension USBHostKit.Device.USBDevice.USBInterface {
     internal static func createMatchingDictionary(
         vendorID: NSNumber? = nil,
         productID: NSNumber? = nil,
@@ -75,7 +75,7 @@ extension USBHostKit.Client.Device.USBDevice.USBInterface {
 
 
 // MARK: - Power management
-extension USBHostKit.Client.Device.USBDevice.USBInterface {
+extension USBHostKit.Device.USBDevice.USBInterface {
     
     internal var idleTimeout: TimeInterval {
         handle.idleTimeout
@@ -92,7 +92,7 @@ extension USBHostKit.Client.Device.USBDevice.USBInterface {
 
 
 // MARK: - Descriptors
-extension USBHostKit.Client.Device.USBDevice.USBInterface {
+extension USBHostKit.Device.USBDevice.USBInterface {
     
     internal var configurationDescriptor: UnsafePointer<IOUSBConfigurationDescriptor> {
         handle.configurationDescriptor
@@ -105,7 +105,7 @@ extension USBHostKit.Client.Device.USBDevice.USBInterface {
 
 
 // MARK: - Alternate settings & pipes
-extension USBHostKit.Client.Device.USBDevice.USBInterface {
+extension USBHostKit.Device.USBDevice.USBInterface {
     
     internal func selectAlternateSetting(_ alternateSetting: Int) throws(USBHostError) {
         do {
@@ -127,7 +127,7 @@ extension USBHostKit.Client.Device.USBDevice.USBInterface {
 
 
 // MARK: - Metadata
-extension USBHostKit.Client.Device.USBDevice.USBInterface {
+extension USBHostKit.Device.USBDevice.USBInterface {
     internal var name: String {
         metadata.name
     }
@@ -145,7 +145,7 @@ extension USBHostKit.Client.Device.USBDevice.USBInterface {
     }
 }
 // MARK: - Metadata support
-extension USBHostKit.Client.Device.USBDevice.USBInterface {
+extension USBHostKit.Device.USBDevice.USBInterface {
     fileprivate struct MetaData {
         fileprivate let name: String
         fileprivate let endpointCount: UInt8

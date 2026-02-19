@@ -11,7 +11,7 @@ import Foundation
 import IOUSBHost
 
 
-extension USBHostKit.Client.Device {
+extension USBHostKit.Device {
     
     internal final class USBDevice: USBObject {
         
@@ -50,7 +50,7 @@ extension USBHostKit.Client.Device {
 
 
 // MARK: - Matching dictionary
-extension USBHostKit.Client.Device.USBDevice {
+extension USBHostKit.Device.USBDevice {
     
     internal static func createMatchingDictionary(
         vendorID: Int? = nil,
@@ -88,7 +88,7 @@ extension USBHostKit.Client.Device.USBDevice {
 
 
 // MARK: - Configuration
-extension USBHostKit.Client.Device.USBDevice {
+extension USBHostKit.Device.USBDevice {
     
     internal func configure(value: Int, matchInterfaces: Bool) throws(USBHostError) {
         do {
@@ -104,7 +104,7 @@ extension USBHostKit.Client.Device.USBDevice {
 }
 
 // MARK: - Device state
-extension USBHostKit.Client.Device.USBDevice {
+extension USBHostKit.Device.USBDevice {
     
     internal var currentConfigurationDescriptor: UnsafePointer<IOUSBConfigurationDescriptor>? {
         handle.configurationDescriptor
@@ -121,7 +121,7 @@ extension USBHostKit.Client.Device.USBDevice {
 
 
 // MARK: - Metadata
-extension USBHostKit.Client.Device.USBDevice {
+extension USBHostKit.Device.USBDevice {
     internal var vendorID: UInt16 {
         metadata.vendorID
     }
@@ -157,7 +157,7 @@ extension USBHostKit.Client.Device.USBDevice {
 
 
 // MARK: - Metadata support
-extension USBHostKit.Client.Device.USBDevice {
+extension USBHostKit.Device.USBDevice {
     
     fileprivate struct MetaData {
         fileprivate let vendorID: UInt16
@@ -225,7 +225,7 @@ extension USBHostKit.Client.Device.USBDevice {
 
 
 // MARK: - Request interface
-extension USBHostKit.Client.Device.USBDevice {
+extension USBHostKit.Device.USBDevice {
 
     private var liveConfigurationValue: UInt8? {
         handle.configurationDescriptor?.pointee.bConfigurationValue
