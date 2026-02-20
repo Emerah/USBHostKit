@@ -21,12 +21,12 @@ extension USBHostKit.Client {
         public nonisolated final let deviceReference: DeviceReference
         public nonisolated final let deviceInfo: DeviceInfo
         
-        private var state: SessionState = .active
+        private var state: State = .active
         
-        /// Creates a client session bound to a device registry reference.
+        /// Creates a device client bound to a device registry reference.
         ///
         /// - Parameter deviceReference: The target device registry identifier.
-        /// - Returns: A configured session, or `nil` if the service cannot be opened.
+        /// - Returns: A configured client, or `nil` if the service cannot be opened.
         public init?(deviceReference: DeviceReference) {
             guard let service = Self.ioService(for: deviceReference.deviceID) else {
                 USBHostKit.Manager.USBLogger.error("USBDeviceClient init failed: ioService not found for deviceID \(deviceReference.deviceID)")
@@ -59,7 +59,7 @@ extension USBHostKit.Client.USBDeviceClient {
     ///
     /// - Parameter selection: Interface, alternate setting, and endpoint to monitor.
     /// - Returns: A stream of notifications for the selected interface.
-    /// - Throws: ``USBHostError`` when the session is closed, selection is invalid, or monitoring is already active for this selection.
+    /// - Throws: ``USBHostError`` when the client is closed, selection is invalid, or monitoring is already active for this selection.
     public func monitorNotifications(targetInterface selection: InterfaceSelection) throws -> AsyncThrowingStream<USBDeviceClient.Notification, any Error> {
         guard state == .active else { throw USBHostError.notOpen }
         _ = try validatedSelection(selection)
@@ -85,13 +85,14 @@ extension USBHostKit.Client.USBDeviceClient {
         return stream
     }
 
-    /// Closes the session and releases associated resources.
+    /// Closes the client and releases associated resources.
     ///
-    /// > Note: This currently emits `.deviceRemoved` for all subscribers.
+    /// > Note: Manual close does not emit `.deviceRemoved`.
     public func close() {
         guard state == .active else { return }
-        // TODO: Distinguish manual close from physical removal notifications.
-        finishSession(emitRemoval: true)
+        finishStreams()
+        destroyCachedInterfaces()
+        device.destroy()
     }
     
 }
@@ -152,7 +153,7 @@ extension USBHostKit.Client.USBDeviceClient {
     private func monitorInput(for selection: InterfaceSelection) async {
         do {
             let (interfaceNumber, alternateSetting, endpointAddress) = try validatedSelection(selection)
-            let (_, interface) = try acquireInterface(number: interfaceNumber, alternateSetting: alternateSetting)
+            let interface = try acquireInterface(number: interfaceNumber, alternateSetting: alternateSetting)
             let endpoint = try interface.copyEndpoint(address: endpointAddress)
             try validateInputEndpoint(endpoint)
             let readLength = max(1, Int(endpoint.maxPacketSize))
@@ -164,7 +165,10 @@ extension USBHostKit.Client.USBDeviceClient {
             }
         } catch let error as USBHostError {
             if isDeviceRemoval(error) {
-                finishSession(emitRemoval: true)
+                for continuation in continuations.values {
+                    continuation.yield(.deviceRemoved)
+                }
+                finishStreams()
             } else {
                 finishMonitoring(for: selection, throwing: error)
             }
@@ -190,26 +194,19 @@ extension USBHostKit.Client.USBDeviceClient {
         stopMonitoringTask(for: selection)
     }
     
-    /// Finalizes the session by cancelling tasks, finishing streams, and destroying handles.
+    /// Finishes all active streams and monitoring tasks.
     ///
-    /// - Parameter emitRemoval: Whether `.deviceRemoved` should be emitted before stream completion.
-    private func finishSession(emitRemoval: Bool) {
+    /// This method only finalizes stream-related resources. Device and interface
+    /// teardown is handled by ``close()``.
+    private func finishStreams() {
         guard state != .closed else { return }
         state = .closing
         stopMonitoringTasks()
-        
-        if emitRemoval {
-            for continuation in continuations.values {
-                continuation.yield(.deviceRemoved)
-            }
-        }
-        
+
         for continuation in continuations.values {
             continuation.finish()
         }
         continuations.removeAll()
-        destroyCachedInterfaces()
-        device.destroy()
         state = .closed
     }
 }
@@ -222,7 +219,7 @@ extension USBHostKit.Client.USBDeviceClient {
     /// - Parameters:
     ///   - value: Configuration value to select.
     ///   - matchInterfaces: Whether IOUSBHost should rematch interfaces after the change.
-    /// - Throws: ``USBHostError`` when the session is inactive or configuration fails.
+    /// - Throws: ``USBHostError`` when the client is inactive or configuration fails.
     public func configure(value: Int, matchInterfaces: Bool = true) throws {
         try ensureActiveSession()
         try device.configure(value: value, matchInterfaces: matchInterfaces)
@@ -231,7 +228,7 @@ extension USBHostKit.Client.USBDeviceClient {
     
     /// Resets the open USB device.
     ///
-    /// - Throws: ``USBHostError`` when the session is inactive or reset fails.
+    /// - Throws: ``USBHostError`` when the client is inactive or reset fails.
     public func reset() throws {
         try ensureActiveSession()
         try device.reset()
@@ -241,7 +238,7 @@ extension USBHostKit.Client.USBDeviceClient {
     /// Aborts queued device-level requests.
     ///
     /// - Parameter option: Abort behavior option.
-    /// - Throws: ``USBHostError`` when the session is inactive or abort fails.
+    /// - Throws: ``USBHostError`` when the client is inactive or abort fails.
     public func abortDeviceRequests(option: IOUSBHostAbortOption = .synchronous) throws {
         try ensureActiveSession()
         try device.abortDeviceRequests(option: option)
@@ -253,7 +250,7 @@ extension USBHostKit.Client.USBDeviceClient {
     ///   - timeout: Idle timeout in seconds.
     ///   - interfaceNumber: USB interface number.
     ///   - alternateSetting: USB alternate setting.
-    /// - Throws: ``USBHostError`` when the session is inactive, arguments are invalid, or update fails.
+    /// - Throws: ``USBHostError`` when the client is inactive, arguments are invalid, or update fails.
     public func setInterfaceIdleTimeout(
         _ timeout: TimeInterval,
         interfaceNumber: Int,
@@ -267,7 +264,7 @@ extension USBHostKit.Client.USBDeviceClient {
             throw USBHostError.badArgument
         }
         
-        let (_, interface) = try acquireInterface(number: number, alternateSetting: setting)
+        let interface = try acquireInterface(number: number, alternateSetting: setting)
         try interface.setIdleTimeout(timeout)
     }
     
@@ -276,18 +273,18 @@ extension USBHostKit.Client.USBDeviceClient {
     /// - Parameters:
     ///   - timeout: Idle timeout in seconds.
     ///   - selection: Endpoint selection.
-    /// - Throws: ``USBHostError`` when the session is inactive, selection is invalid, or update fails.
+    /// - Throws: ``USBHostError`` when the client is inactive, selection is invalid, or update fails.
     public func setEndpointIdleTimeout(_ timeout: TimeInterval, selection: InterfaceSelection) throws {
-        let (_, endpoint) = try resolveEndpoint(for: selection)
+        let endpoint = try resolveEndpoint(for: selection)
         try endpoint.setIdleTimeout(timeout)
     }
     
     /// Clears halt/stall state on an endpoint.
     ///
     /// - Parameter selection: Endpoint selection.
-    /// - Throws: ``USBHostError`` when the session is inactive, selection is invalid, or clear-stall fails.
+    /// - Throws: ``USBHostError`` when the client is inactive, selection is invalid, or clear-stall fails.
     public func clearStall(selection: InterfaceSelection) throws {
-        let (_, endpoint) = try resolveEndpoint(for: selection)
+        let endpoint = try resolveEndpoint(for: selection)
         try endpoint.clearStall()
     }
     
@@ -296,9 +293,9 @@ extension USBHostKit.Client.USBDeviceClient {
     /// - Parameters:
     ///   - selection: Endpoint selection.
     ///   - option: Abort behavior option.
-    /// - Throws: ``USBHostError`` when the session is inactive, selection is invalid, or abort fails.
+    /// - Throws: ``USBHostError`` when the client is inactive, selection is invalid, or abort fails.
     public func abortEndpointIO(selection: InterfaceSelection, option: IOUSBHostAbortOption = .synchronous) throws {
-        let (_, endpoint) = try resolveEndpoint(for: selection)
+        let endpoint = try resolveEndpoint(for: selection)
         try endpoint.abort(option: option)
     }
     
@@ -309,13 +306,13 @@ extension USBHostKit.Client.USBDeviceClient {
     ///   - selection: Target endpoint selection.
     ///   - timeout: Completion timeout in seconds.
     /// - Returns: Number of bytes transferred.
-    /// - Throws: ``USBHostError`` when the session is inactive, endpoint is invalid, or transfer fails.
+    /// - Throws: ``USBHostError`` when the client is inactive, endpoint is invalid, or transfer fails.
     public func sendSynchronously(
         data: Data,
         to selection: InterfaceSelection,
         timeout: TimeInterval = IOUSBHostDefaultControlCompletionTimeout
     ) throws -> Int {
-        let (_, endpoint) = try resolveEndpoint(for: selection)
+        let endpoint = try resolveEndpoint(for: selection)
         try validateOutputEndpoint(endpoint)
         let buffer = NSMutableData(data: data)
         return try endpoint.sendIORequest(data: buffer, timeout: timeout)
@@ -328,14 +325,14 @@ extension USBHostKit.Client.USBDeviceClient {
     ///   - length: Requested receive buffer size in bytes.
     ///   - timeout: Completion timeout in seconds.
     /// - Returns: Received payload bytes.
-    /// - Throws: ``USBHostError`` when the session is inactive, arguments are invalid, endpoint is invalid, or transfer fails.
+    /// - Throws: ``USBHostError`` when the client is inactive, arguments are invalid, endpoint is invalid, or transfer fails.
     public func receiveSynchronously(
         from selection: InterfaceSelection,
         length: Int,
         timeout: TimeInterval = IOUSBHostDefaultControlCompletionTimeout
     ) throws -> Data {
         guard length > 0 else { throw USBHostError.badArgument }
-        let (_, endpoint) = try resolveEndpoint(for: selection)
+        let endpoint = try resolveEndpoint(for: selection)
         try validateInputEndpoint(endpoint)
         let buffer = try device.makeIOData(capacity: length)
         let bytes = try endpoint.sendIORequest(data: buffer, timeout: timeout)
@@ -349,14 +346,14 @@ extension USBHostKit.Client.USBDeviceClient {
     ///   - length: Requested receive buffer size in bytes.
     ///   - timeout: Completion timeout in seconds.
     /// - Returns: Received payload bytes.
-    /// - Throws: ``USBHostError`` when the session is inactive, arguments are invalid, endpoint is invalid, or transfer fails.
+    /// - Throws: ``USBHostError`` when the client is inactive, arguments are invalid, endpoint is invalid, or transfer fails.
     public func receive(
         from selection: InterfaceSelection,
         length: Int,
         timeout: TimeInterval = IOUSBHostDefaultControlCompletionTimeout
     ) async throws -> Data {
         guard length > 0 else { throw USBHostError.badArgument }
-        let (_, endpoint) = try resolveEndpoint(for: selection)
+        let endpoint = try resolveEndpoint(for: selection)
         try validateInputEndpoint(endpoint)
         return try await readData(from: endpoint, length: length, timeout: timeout)
     }
@@ -368,9 +365,9 @@ extension USBHostKit.Client.USBDeviceClient {
     ///   - selection: Target interface, alternate setting, and endpoint.
     ///   - timeout: Completion timeout in seconds.
     /// - Returns: Number of bytes transferred.
-    /// - Throws: ``USBHostError`` when the session is inactive, endpoint is invalid, or the I/O request fails.
+    /// - Throws: ``USBHostError`` when the client is inactive, endpoint is invalid, or the I/O request fails.
     public func send(data: Data, to selection: InterfaceSelection, timeout: TimeInterval = IOUSBHostDefaultControlCompletionTimeout) async throws -> Int {
-        let (_, endpoint) = try resolveEndpoint(for: selection)
+        let endpoint = try resolveEndpoint(for: selection)
         try validateOutputEndpoint(endpoint)
         let buffer = NSMutableData(data: data)
         let value = try await enqueueIORequest(on: endpoint, data: buffer, timeout: timeout)
@@ -386,7 +383,7 @@ extension USBHostKit.Client.USBDeviceClient {
     ///   - request: USB device request descriptor.
     ///   - timeout: Completion timeout in seconds.
     /// - Returns: Number of bytes transferred.
-    /// - Throws: ``USBHostError`` when the session is inactive or the request fails.
+    /// - Throws: ``USBHostError`` when the client is inactive or the request fails.
     public func controlTransfer(
         _ request: IOUSBDeviceRequest,
         timeout: TimeInterval = IOUSBHostDefaultControlCompletionTimeout
@@ -402,7 +399,7 @@ extension USBHostKit.Client.USBDeviceClient {
     ///   - data: Data to attach to the request.
     ///   - timeout: Completion timeout in seconds.
     /// - Returns: Number of bytes transferred.
-    /// - Throws: ``USBHostError`` when the session is inactive or the request fails.
+    /// - Throws: ``USBHostError`` when the client is inactive or the request fails.
     public func controlTransfer(
         _ request: IOUSBDeviceRequest,
         data: Data,
@@ -420,7 +417,7 @@ extension USBHostKit.Client.USBDeviceClient {
     ///   - receiveLength: Preferred receive length; falls back to `wLength` when non-positive.
     ///   - timeout: Completion timeout in seconds.
     /// - Returns: Received data buffer.
-    /// - Throws: ``USBHostError`` when arguments are invalid, the session is inactive, or the request fails.
+    /// - Throws: ``USBHostError`` when arguments are invalid, the client is inactive, or the request fails.
     public func controlTransfer(
         _ request: IOUSBDeviceRequest,
         receiveLength: Int,
@@ -447,7 +444,7 @@ extension USBHostKit.Client.USBDeviceClient {
     /// Returns the current USB device address assigned by the host.
     ///
     /// - Returns: Device address value.
-    /// - Throws: ``USBHostError/notOpen`` when the session is not active.
+    /// - Throws: ``USBHostError/notOpen`` when the client is not active.
     public func deviceAddress() throws -> Int {
         try ensureActiveSession()
         return device.deviceAddress
@@ -456,7 +453,7 @@ extension USBHostKit.Client.USBDeviceClient {
     /// Reads the current host frame number from IOUSBHost.
     ///
     /// - Returns: Current USB frame number.
-    /// - Throws: ``USBHostError/notOpen`` when the session is not active.
+    /// - Throws: ``USBHostError/notOpen`` when the client is not active.
     public func currentFrameNumber() throws -> UInt64 {
         try ensureActiveSession()
         return device.currentFrameNumber
@@ -468,7 +465,7 @@ extension USBHostKit.Client.USBDeviceClient {
     ///   - index: String descriptor index.
     ///   - languageID: USB language identifier used for lookup.
     /// - Returns: Localized string descriptor value.
-    /// - Throws: ``USBHostError`` when the session is inactive or descriptor retrieval fails.
+    /// - Throws: ``USBHostError`` when the client is inactive or descriptor retrieval fails.
     public func stringDescriptor(
         index: Int,
         languageID: Int = Int(kIOUSBLanguageIDEnglishUS.rawValue)
@@ -480,7 +477,7 @@ extension USBHostKit.Client.USBDeviceClient {
     /// Reads the active configuration descriptor as raw bytes.
     ///
     /// - Returns: Configuration descriptor bytes including subordinate descriptors.
-    /// - Throws: ``USBHostError`` when the session is inactive or descriptor data is unavailable.
+    /// - Throws: ``USBHostError`` when the client is inactive or descriptor data is unavailable.
     public func currentConfigurationDescriptorData() throws -> Data {
         try ensureActiveSession()
         guard let descriptor = device.currentConfigurationDescriptor else {
@@ -496,7 +493,7 @@ extension USBHostKit.Client.USBDeviceClient {
     ///
     /// - Parameter configurationValue: USB configuration value to query.
     /// - Returns: Configuration descriptor bytes including subordinate descriptors.
-    /// - Throws: ``USBHostError`` when the session is inactive or descriptor retrieval fails.
+    /// - Throws: ``USBHostError`` when the client is inactive or descriptor retrieval fails.
     public func configurationDescriptorData(configurationValue: Int) throws -> Data {
         try ensureActiveSession()
         let descriptor = try device.configurationDescriptor(configurationValue: configurationValue)
@@ -508,7 +505,7 @@ extension USBHostKit.Client.USBDeviceClient {
     /// Reads BOS/capability descriptors as raw bytes when supported by the device.
     ///
     /// - Returns: BOS descriptor bytes, or `nil` when the device has no BOS descriptor.
-    /// - Throws: ``USBHostError/notOpen`` when the session is not active.
+    /// - Throws: ``USBHostError/notOpen`` when the client is not active.
     public func capabilityDescriptorsData() throws -> Data? {
         try ensureActiveSession()
         guard let descriptors = device.capabilityDescriptors else {
@@ -530,7 +527,7 @@ extension USBHostKit.Client.USBDeviceClient {
     ///   - requestType: USB request type value.
     ///   - requestRecipient: USB request recipient value.
     /// - Returns: Descriptor bytes.
-    /// - Throws: ``USBHostError`` when the session is inactive, arguments are invalid, or retrieval fails.
+    /// - Throws: ``USBHostError`` when the client is inactive, arguments are invalid, or retrieval fails.
     public func descriptorData(
         type: tIOUSBDescriptorType,
         maxLength: Int,
@@ -565,18 +562,18 @@ extension USBHostKit.Client.USBDeviceClient {
     /// Enables USB streams on the selected endpoint.
     ///
     /// - Parameter selection: Target endpoint selection.
-    /// - Throws: ``USBHostError`` when the session is inactive, selection is invalid, or stream enabling fails.
+    /// - Throws: ``USBHostError`` when the client is inactive, selection is invalid, or stream enabling fails.
     public func enableStreams(selection: InterfaceSelection) throws {
-        let (_, endpoint) = try resolveEndpoint(for: selection)
+        let endpoint = try resolveEndpoint(for: selection)
         try endpoint.enableStreams()
     }
     
     /// Disables USB streams on the selected endpoint.
     ///
     /// - Parameter selection: Target endpoint selection.
-    /// - Throws: ``USBHostError`` when the session is inactive, selection is invalid, or stream disabling fails.
+    /// - Throws: ``USBHostError`` when the client is inactive, selection is invalid, or stream disabling fails.
     public func disableStreams(selection: InterfaceSelection) throws {
-        let (_, endpoint) = try resolveEndpoint(for: selection)
+        let endpoint = try resolveEndpoint(for: selection)
         try endpoint.disableStreams()
     }
     
@@ -586,9 +583,9 @@ extension USBHostKit.Client.USBDeviceClient {
     ///   - streamID: Stream identifier.
     ///   - selection: Target endpoint selection.
     /// - Returns: Opened IOUSBHost stream handle.
-    /// - Throws: ``USBHostError`` when the session is inactive, selection is invalid, or stream lookup fails.
+    /// - Throws: ``USBHostError`` when the client is inactive, selection is invalid, or stream lookup fails.
     public func copyStream(streamID: Int, selection: InterfaceSelection) throws -> IOUSBHostStream {
-        let (_, endpoint) = try resolveEndpoint(for: selection)
+        let endpoint = try resolveEndpoint(for: selection)
         return try endpoint.copyStream(streamID: streamID)
     }
     
@@ -596,9 +593,9 @@ extension USBHostKit.Client.USBDeviceClient {
     ///
     /// - Parameter selection: Target endpoint selection.
     /// - Returns: Current endpoint scheduling descriptor values.
-    /// - Throws: ``USBHostError/notOpen`` when the session is not active or endpoint resolution fails.
+    /// - Throws: ``USBHostError/notOpen`` when the client is not active or endpoint resolution fails.
     public func endpointDescriptors(selection: InterfaceSelection) throws -> IOUSBHostIOSourceDescriptors {
-        let (_, endpoint) = try resolveEndpoint(for: selection)
+        let endpoint = try resolveEndpoint(for: selection)
         return endpoint.descriptors.pointee
     }
     
@@ -606,9 +603,9 @@ extension USBHostKit.Client.USBDeviceClient {
     ///
     /// - Parameter selection: Target endpoint selection.
     /// - Returns: Original endpoint scheduling descriptor values.
-    /// - Throws: ``USBHostError/notOpen`` when the session is not active or endpoint resolution fails.
+    /// - Throws: ``USBHostError/notOpen`` when the client is not active or endpoint resolution fails.
     public func endpointOriginalDescriptors(selection: InterfaceSelection) throws -> IOUSBHostIOSourceDescriptors {
-        let (_, endpoint) = try resolveEndpoint(for: selection)
+        let endpoint = try resolveEndpoint(for: selection)
         return endpoint.originalDescriptors.pointee
     }
     
@@ -617,12 +614,12 @@ extension USBHostKit.Client.USBDeviceClient {
     /// - Parameters:
     ///   - descriptors: Descriptor values to apply.
     ///   - selection: Target endpoint selection.
-    /// - Throws: ``USBHostError`` when the session is inactive, selection is invalid, or adjustment fails.
+    /// - Throws: ``USBHostError`` when the client is inactive, selection is invalid, or adjustment fails.
     public func adjustEndpointDescriptors(
         _ descriptors: IOUSBHostIOSourceDescriptors,
         selection: InterfaceSelection
     ) throws {
-        let (_, endpoint) = try resolveEndpoint(for: selection)
+        let endpoint = try resolveEndpoint(for: selection)
         var mutableDescriptors = descriptors
         try withUnsafePointer(to: &mutableDescriptors) { pointer in
             try endpoint.adjust(descriptors: pointer)
@@ -633,9 +630,9 @@ extension USBHostKit.Client.USBDeviceClient {
 // MARK: - Endpoint helpers
 extension USBHostKit.Client.USBDeviceClient {
     
-    /// Ensures APIs are called while the device session is active.
+    /// Ensures APIs are called while the device client is active.
     ///
-    /// - Throws: ``USBHostError/notOpen`` when the session is not active.
+    /// - Throws: ``USBHostError/notOpen`` when the client is not active.
     private func ensureActiveSession() throws {
         guard state == .active else { throw USBHostError.notOpen }
     }
@@ -645,17 +642,17 @@ extension USBHostKit.Client.USBDeviceClient {
         let alternateSetting: UInt8
     }
     
-    /// Resolves a public endpoint selection into cached interface and endpoint wrappers.
+    /// Resolves a public endpoint selection into a cached endpoint wrapper.
     ///
     /// - Parameter selection: Public endpoint selection.
-    /// - Returns: Interface wrapper and endpoint wrapper.
-    /// - Throws: ``USBHostError`` when session is inactive, conversion fails, or resolution fails.
-    private func resolveEndpoint(for selection: InterfaceSelection) throws -> (USBInterface, USBEndpoint) {
+    /// - Returns: Endpoint wrapper.
+    /// - Throws: ``USBHostError`` when client is inactive, conversion fails, or resolution fails.
+    private func resolveEndpoint(for selection: InterfaceSelection) throws -> USBEndpoint {
         try ensureActiveSession()
         let (interfaceNumber, alternateSetting, endpointAddress) = try validatedSelection(selection)
-        let (_, interface) = try acquireInterface(number: interfaceNumber, alternateSetting: alternateSetting)
+        let interface = try acquireInterface(number: interfaceNumber, alternateSetting: alternateSetting)
         let endpoint = try interface.copyEndpoint(address: endpointAddress)
-        return (interface, endpoint)
+        return endpoint
     }
     
     /// Returns a cached interface object for a selection, creating it when needed.
@@ -663,18 +660,18 @@ extension USBHostKit.Client.USBDeviceClient {
     /// - Parameters:
     ///   - number: USB interface number.
     ///   - alternateSetting: USB alternate setting value.
-    /// - Returns: Cache key and interface object pair.
+    /// - Returns: Cached interface object.
     /// - Throws: ``USBHostError`` when interface creation fails.
-    private func acquireInterface(number: UInt8, alternateSetting: UInt8) throws -> (CachedInterfaceKey, USBInterface) {
+    private func acquireInterface(number: UInt8, alternateSetting: UInt8) throws -> USBInterface {
         let key = CachedInterfaceKey(interfaceNumber: number, alternateSetting: alternateSetting)
 
         if let cached = interfaceCache[key] {
-            return (key, cached)
+            return cached
         }
 
         let interface = try device.interface(number, alternateSetting: alternateSetting)
         interfaceCache[key] = interface
-        return (key, interface)
+        return interface
     }
 
     /// Destroys all cached interfaces and clears cache storage.
@@ -868,7 +865,7 @@ extension USBHostKit.Client.USBDeviceClient {
         public let interfaceCount: Int
         public let currentConfigurationValue: Int
         
-        /// Creates immutable device information captured at session creation time.
+        /// Creates immutable device information captured at client initialization time.
         ///
         /// - Parameters:
         ///   - device: Internal USB device object.
@@ -888,9 +885,9 @@ extension USBHostKit.Client.USBDeviceClient {
 }
 
 
-// MARK: - Session State
+// MARK: - Client State
 extension USBHostKit.Client.USBDeviceClient {
-    private enum SessionState {
+    private enum State {
         case active
         case closing
         case closed
