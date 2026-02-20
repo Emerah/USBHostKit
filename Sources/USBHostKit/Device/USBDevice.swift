@@ -11,6 +11,7 @@ import Foundation
 import IOUSBHost
 
 
+// MARK: - Device type
 extension USBHostKit.Device {
     
     internal final class USBDevice: USBObject {

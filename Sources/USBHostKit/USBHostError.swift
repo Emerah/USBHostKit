@@ -69,6 +69,7 @@ public enum USBHostError: Error, LocalizedError, Equatable {
 
 
 
+// MARK: - Translation
 extension USBHostError {
 
     /// Translates an arbitrary Swift ``Error`` into a ``USBHostError`` when possible.

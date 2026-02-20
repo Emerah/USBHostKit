@@ -407,6 +407,7 @@ extension USBHostKit.Manager.USBDeviceManager {
 }
 
 
+// MARK: - Matching criteria
 extension USBHostKit.Manager.USBDeviceManager {
     public struct DeviceMatchingCriteria: Sendable {
         public let vendorID: UInt16
@@ -479,6 +480,7 @@ extension USBHostKit.Manager {
 
 
 
+// MARK: - Logger
 extension USBHostKit.Manager {
 
     internal struct USBLogger {

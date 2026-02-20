@@ -10,6 +10,7 @@
 import Foundation
 import IOUSBHost
 
+// MARK: - Endpoint type
 extension USBHostKit.Device.USBDevice.USBInterface {
     internal final class USBEndpoint {
         
@@ -334,7 +335,7 @@ extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
     }
 }
 
-
+// MARK: - Metadata support
 extension USBHostKit.Device.USBDevice.USBInterface.USBEndpoint {
 
     fileprivate struct MetaData {

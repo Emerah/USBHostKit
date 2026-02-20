@@ -11,6 +11,7 @@ import Foundation
 import IOUSBHost
 
 
+// MARK: - Protocol
 extension USBHostKit.Device {
     internal protocol USBObject {
         associatedtype USBHandle: IOUSBHostObject
