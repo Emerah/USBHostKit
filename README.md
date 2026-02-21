@@ -28,6 +28,13 @@ dependencies: [
 ]
 ```
 
+## USBDeviceManager
+
+USBHostKit is built around USBDeviceManager, the discovery and lifecycle component that monitors IOKit matching/termination notifications and emits device attach/remove events as an async stream. You configure it with DeviceMatchingCriteria (VID/PID plus optional string filters), keep it running as a long-lived monitor, and use each emitted DeviceReference as the stable handoff point into an active communication session.
+
+## USBDeviceClient
+
+USBDeviceClient is the per-device communication component that opens a single matched device and exposes operational APIs for endpoint I/O, control transfers, descriptor access, and interface-level monitoring. A client represents one concrete device handle lifecycle: it can monitor multiple interface selections concurrently, but when the physical device is removed the client emits removal and ends its interface streams, so reconnect handling is performed by creating a fresh client from the next manager match event.
 
 
 ## Tutorial: First Discovery + Open
