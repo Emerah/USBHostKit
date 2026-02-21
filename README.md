@@ -22,6 +22,11 @@ It provides:
 
 Add `USBHostKit` to your package dependencies, then include it in your target dependencies.
 
+```swift
+dependencies: [
+    .package(url: "https://github.com/Emerah/USBHostKit.git", branch: "main")
+]
+```
 
 
 
