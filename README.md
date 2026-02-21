@@ -28,6 +28,17 @@ dependencies: [
 ]
 ```
 
+Then include `USBHostKit` in your target dependencies:
+
+```swift
+targets: [
+    .target(
+        name: "YourTarget",
+        dependencies: [.product(package: "USBHostKit", name: "USBHostKit")]
+    )
+]
+```
+
 ## USBDeviceManager
 
 USBHostKit is built around USBDeviceManager, the discovery and lifecycle component that monitors IOKit matching/termination notifications and emits device attach/remove events as an async stream. You configure it with DeviceMatchingCriteria (VID/PID plus optional string filters), keep it running as a long-lived monitor, and use each emitted DeviceReference as the stable handoff point into an active communication session.
