@@ -134,7 +134,7 @@ print("sync received bytes: \(receivedSync.count)")
 `monitorNotifications(targetInterface:)` gives a stream of endpoint input and removal events:
 
 ```swift
-let inputEvents = try await client.monitorNotifications(targetInterface: inSelection)
+let inputEvents = try await client.monitorNotifications(interfaceSelection: inSelection)
 
 Task {
     do {
